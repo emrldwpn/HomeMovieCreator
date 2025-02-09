@@ -57,8 +57,7 @@ def process_and_standardize_videos(input_dir, output_dir, target_width=1920, tar
         video = video.filter('setsar', '1/1')  # Ensure square pixels
 
         # Determine if video needs pillarboxing
-        # if width < height or dar == '9:16':
-        if True:
+        if width < height or dar == '9:16':
             print(f"🔹 Pillarboxing vertical video: {filename}")
 
             video = video.filter('setdar', '16/9')
