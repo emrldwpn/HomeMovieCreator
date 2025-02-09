@@ -2,102 +2,149 @@ import os
 import ffmpeg
 from timestamp_utils import extract_date_from_filename, extract_time_from_filename
 
+# Paths
 input_dir = r"C:\Users\ericp\Desktop\videos-test"
 output_dir = r"C:\Users\ericp\Desktop\videos-test\output"
 final_output_file = r"C:\Users\ericp\Desktop\videos-test\output\combined_video.mp4"
 os.makedirs(output_dir, exist_ok=True)
 
-def add_timestamp_to_videos(input_dir, output_dir, duration=2.5):
+def get_resolution(video_file):
+    """Extract width, height, and rotation metadata from a video file."""
+    probe = ffmpeg.probe(video_file)
+    video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+    if not video_stream:
+        raise ValueError(f"No video stream found in {video_file}")
+
+    width = int(video_stream['width'])
+    height = int(video_stream['height'])
+
+    # Detect rotation metadata
+    rotation = int(video_stream.get('tags', {}).get('rotate', 0))
+
+    return width, height, rotation
+    
+
+def process_and_standardize_videos(input_dir, output_dir, target_width=1920, target_height=1080, target_fps=30):
+    """Fixes aspect ratio issues, pillarboxes vertical videos, and standardizes encoding."""
     for filename in os.listdir(input_dir):
-        if filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".wmv")):
-            input_path = os.path.join(input_dir, filename)
-            output_path = os.path.join(output_dir, f"{filename}")
-                        
-            if os.path.exists(output_path):
-                print(f"⏩ Skipping {filename} (already processed)")
-                continue
+        if not filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".wmv")):
+            continue
 
-            print(f"Processing: {filename}")
+        input_path = os.path.join(input_dir, filename)
+        output_path = os.path.join(output_dir, filename)
+
+        if os.path.exists(output_path):
+            print(f"⏩ Skipping {filename} (already processed)")
+            continue
+
+        print(f"📌 Processing: {filename}")
+
+        # Extract video metadata
+        probe = ffmpeg.probe(input_path)
+        video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+        if not video_stream:
+            print(f"❌ No video stream found in {filename}")
+            continue
+
+        width, height = int(video_stream['width']), int(video_stream['height'])
+        sar = video_stream.get('sample_aspect_ratio', '1:1')  # Get SAR, default to 1:1
+        dar = video_stream.get('display_aspect_ratio', '1:1')  # Get DAR, default to 1:1
+
+        print(f"📏 Original Resolution: {width}x{height}, SAR: {sar}, DAR: {dar}")
+
+        # Define video input and normalize SAR
+        video = ffmpeg.input(input_path).filter('fps', fps=target_fps, round='up')  # Normalize frame rate
+        video = video.filter('setsar', '1/1')  # Ensure square pixels
+
+        # Determine if video needs pillarboxing
+        # if width < height or dar == '9:16':
+        if True:
+            print(f"🔹 Pillarboxing vertical video: {filename}")
+
+            video = video.filter('setdar', '16/9')
             
-            try:
-                date=extract_date_from_filename(filename)
-                time=extract_time_from_filename(filename)
-            except ValueError as e:
-                print(f"❌ Error parsing datetime from {filename}")
-                print(e)
-                continue
+            # Scale while maintaining aspect ratio
+            video = video.filter('scale', 'min(iw*1080/ih,1920)', 'min(1080, ih*1920/iw)')
+            video = video.filter('pad', target_width, target_height, '(ow-iw)/2', '(oh-ih)/2', color='black')
 
-            try:
-                video = ffmpeg.input(input_path)
-                video = video.filter("drawtext", text=date, fontcolor="white", fontsize=24,
-                                     x="w-text_w-10", y="h-text_h-50", enable="lte(t,2.5)")
-                video = video.filter("drawtext", text=time, fontcolor="white", fontsize=24,
-                                     x="w-text_w-10", y="h-text_h-25", enable="lte(t,2.5)")
-                ffmpeg.output(video, output_path, vcodec="libx264", crf=18, preset="medium",
-                              acodec="copy", map="0:a?").run(overwrite_output=True)
+        else:
+            # Standard landscape videos just get resized properly
+            video = video.filter('scale', target_width, target_height)
 
-                print(f"✅ Processed: {output_path}")
+        # Encode and save the processed file, forcing SAR at the bitstream level
+        try:
+            ffmpeg.output(
+                video, output_path,
+                vcodec="libx264", crf=18, preset="slow",
+                acodec="aac", audio_bitrate="192k", pix_fmt="yuv420p", format="mp4", map="0:a?",
+                **{'bsf:v': 'h264_metadata=sample_aspect_ratio=1/1'}
+            ).run(overwrite_output=True)
 
-            except ffmpeg.Error as e:
-                print(f"❌ Error processing {filename}")
-                print("------ FFmpeg Error Output ------")
-                print(e.stderr.decode() if e.stderr else "No detailed error message available.")
-                print("---------------------------------")
+            print(f"✅ Processed: {filename}")
 
-    print("✅ All videos processed successfully.")
+        except ffmpeg.Error as e:
+            print(f"❌ Error processing {filename}")
+            print(e.stderr.decode() if e.stderr else "No detailed error message available.")
+
+    print("🎬 All videos processed successfully!")
+
+
+
+def batch_concatenate(output_directory, final_output_file, batch_size=5):
+    # Gather all video files from the output directory
+    video_files = [
+        os.path.join(output_directory, file)
+        for file in os.listdir(output_directory)
+        if file.endswith(".mp4")
+    ]
     
-    
-def combine_videos(output_folder, final_output_file):
-    """
-    Combine all processed video files in the output folder into a single video.
-    
-    :param output_folder: Path to the folder containing processed video files.
-    :param final_output_file: Path for the final combined video file.
-    """
-    video_files = sorted(
-        [os.path.join(output_folder, f) for f in os.listdir(output_folder) if f.endswith(".mp4")]
-    )
-
     if not video_files:
-        print("No video files found to combine.")
-        return
+        raise ValueError("No video files found in the specified directory.")
 
-    concat_file_path = os.path.join(output_folder, "videos.txt")
-    with open(concat_file_path, "w") as concat_file:
-        for video in video_files:
-            concat_file.write(f"file '{video}'\n")
+    temp_files = []
+    batch_count = 0
 
-    # Run FFmpeg concatenation command
-    try:
-        ffmpeg.input(concat_file_path, format="concat", safe=0).output(
-            final_output_file, c="copy"
-        ).run(overwrite_output=True)
-        print(f"✅ Combined video saved as: {final_output_file}")
-        cleanup(concat_file_path, video_files)
-        print(f"✅ Performed cleanup tasks")
-    except ffmpeg.Error as e:
-        print(f"❌ Error combining videos: {e.stderr.decode()}")
+    # Process batches
+    for i in range(0, len(video_files), batch_size):
+        batch = video_files[i:i + batch_size]
+        batch_concat_file = os.path.join(output_directory, f"batch_{batch_count}.txt")
+        with open(batch_concat_file, "w") as f:
+            for file in batch:
+                f.write(f"file '{file}'\n")
         
-def cleanup(concat_file_path, video_files):
-    """
-    Cleanup the temporary files created.
-    
-    :param concat_file_path: Path to the file containing list of video files to concat.
-    :param video_files: List of video files to be cleaned up.
-    """
-    try:
-        if os.path.exists(concat_file_path):
-            os.remove(concat_file_path)
-            print(f"🗑️ Deleted temporary file: {concat_file_path}")
+        intermediate_output = os.path.join(output_directory, f"batch_{batch_count}.mp4")
+        temp_files.append(intermediate_output)
 
-        for video in video_files:
-            if video != final_output_file:
-                os.remove(video)
-                print(f"🗑️ Deleted temporary video: {video}")
+        # Run FFmpeg to concatenate the current batch with proper scaling and padding
+        ffmpeg.input(batch_concat_file, format="concat", safe=0).output(
+            intermediate_output, vcodec="libx264", acodec="aac", pix_fmt="yuv420p"
+        ).run(overwrite_output=True)
+        
+        os.remove(batch_concat_file)
+        batch_count += 1
 
-    except Exception as cleanup_error:
-        print(f"❌ Error during cleanup: {cleanup_error}")
-    
-    
-add_timestamp_to_videos(input_dir, output_dir)
-combine_videos(output_dir, final_output_file)
+    # Final concatenation with scaling & pillarboxing to 1920x1080
+    final_concat_file = os.path.join(output_directory, "final_concat_list.txt")
+    with open(final_concat_file, "w") as f:
+        for temp_file in temp_files:
+            f.write(f"file '{temp_file}'\n")
+
+    # Apply scaling & pillarboxing correctly
+    ffmpeg.input(final_concat_file, format="concat", safe=0).output(
+        final_output_file, vcodec="libx264", acodec="aac", pix_fmt="yuv420p"
+        # final_output_file, vcodec="libx264", acodec="aac", pix_fmt="yuv420p",
+        # vf="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black"
+    ).run(overwrite_output=True)
+
+    # Cleanup temporary files
+    for temp_file in temp_files:
+        os.remove(temp_file)
+    os.remove(final_concat_file)
+
+    print(f"✅ Final video created: {final_output_file}")
+
+
+
+# Run the process
+process_and_standardize_videos(input_dir, output_dir)
+batch_concatenate(output_dir, final_output_file, batch_size=5)
