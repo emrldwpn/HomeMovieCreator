@@ -3,7 +3,7 @@ import ffmpeg
 from timestamp_utils import extract_date_from_filename, extract_time_from_filename
 
 # Paths
-input_dir = r"C:\Users\ericp\Desktop\Phoenix Baby Tape"
+input_dir = r"C:\Users\ericp\Desktop\videos-test"
 output_dir = r"C:\Users\ericp\Desktop\videos-test\output"
 final_output_file = r"C:\Users\ericp\Desktop\videos-test\output\combined_video.mp4"
 os.makedirs(output_dir, exist_ok=True)
@@ -71,14 +71,6 @@ def process_and_standardize_videos(input_dir, output_dir, target_width=1920, tar
         print(f"🔍 Rotation: {rotation}°, Is Vertical: {is_vertical}")
         
         if is_vertical:
-            print(f"🔹 Pillarboxing vertical video: {filename}")
-            
-        if True:
-            continue
-
-
-        # Determine if video needs pillarboxing
-        if width < height or dar == '16:9':
             print(f"🔹 Pillarboxing vertical video: {filename}")
 
             video = video.filter('setdar', '16/9')
@@ -163,4 +155,4 @@ def batch_concatenate(output_directory, final_output_file, batch_size=5):
 
 # Run the process
 process_and_standardize_videos(input_dir, output_dir)
-# batch_concatenate(output_dir, final_output_file, batch_size=5)
+batch_concatenate(output_dir, final_output_file, batch_size=5)
