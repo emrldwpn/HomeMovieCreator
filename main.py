@@ -7,44 +7,104 @@ output_dir = r"C:\Users\ericp\Desktop\videos-test\output"
 final_output_file = r"C:\Users\ericp\Desktop\videos-test\output\combined_video.mp4"
 os.makedirs(output_dir, exist_ok=True)
 
-def add_timestamp_to_videos(input_dir, output_dir, duration=2.5):
+
+def process_and_standardize_videos(input_dir, output_dir, target_width=1920, target_height=1080, target_fps=30):
+    """Fixes aspect ratio issues, pillarboxes vertical videos, and standardizes encoding."""
     for filename in os.listdir(input_dir):
-        if filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".wmv")):
-            input_path = os.path.join(input_dir, filename)
-            output_path = os.path.join(output_dir, f"{filename}")
-                        
-            if os.path.exists(output_path):
-                print(f"⏩ Skipping {filename} (already processed)")
-                continue
+        if not filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".wmv")):
+            continue
 
-            print(f"Processing: {filename}")
+        input_path = os.path.join(input_dir, filename)
+        output_path = os.path.join(output_dir, filename)
+
+        if os.path.exists(output_path):
+            print(f"⏩ Skipping {filename} (already processed)")
+            continue
+
+        print(f"📌 Processing: {filename}")
+
+        # Extract video metadata
+        probe = ffmpeg.probe(input_path)
+        video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+        if not video_stream:
+            print(f"❌ No video stream found in {filename}")
+            continue
+
+        width, height = int(video_stream['width']), int(video_stream['height'])
+        sar = video_stream.get('sample_aspect_ratio', '1:1')  # Get SAR, default to 1:1
+        dar = video_stream.get('display_aspect_ratio', '1:1')  # Get DAR, default to 1:1
+
+        print(f"📏 Original Resolution: {width}x{height}, SAR: {sar}, DAR: {dar}")
+
+        # Define video input and normalize SAR
+        video = ffmpeg.input(input_path).filter('fps', fps=target_fps, round='up')  # Normalize frame rate
+        video = video.filter('setsar', '1/1')  # Ensure square pixels
             
-            try:
-                date=extract_date_from_filename(filename)
-                time=extract_time_from_filename(filename)
-            except ValueError as e:
-                print(f"❌ Error parsing datetime from {filename}")
-                print(e)
-                continue
+        rotation = 0
+        displaymatrix = 0
+        if "side_data_list" in video_stream:
+            for side_data in video_stream["side_data_list"]:
+                if "rotation" in side_data:
+                    rotation = side_data["rotation"]
+                if "displaymatrix" in side_data:
+                    displaymatrix = side_data["rotation"]
+                    print(f"displaymatrix = {displaymatrix}") 
+        
+        is_vertical = (width < height) or (rotation in [90, 270]) or (displaymatrix) in ([90, -90])
+           
+        print(f"🔍 Rotation: {rotation}°, Is Vertical: {is_vertical}")
+        
+        if is_vertical:
+            print(f"🔹 Pillarboxing vertical video: {filename}")
 
-            try:
-                video = ffmpeg.input(input_path)
-                video = video.filter("drawtext", text=date, fontcolor="white", fontsize=24,
-                                     x="w-text_w-10", y="h-text_h-50", enable="lte(t,2.5)")
-                video = video.filter("drawtext", text=time, fontcolor="white", fontsize=24,
-                                     x="w-text_w-10", y="h-text_h-25", enable="lte(t,2.5)")
-                ffmpeg.output(video, output_path, vcodec="libx264", crf=18, preset="medium",
-                              acodec="copy", map="0:a?").run(overwrite_output=True)
+            video = video.filter('setdar', '16/9')
+            
+            # Scale while maintaining aspect ratio
+            video = video.filter('scale', 'min(iw*1080/ih,1920)', 'min(1080, ih*1920/iw)')
+            video = video.filter('pad', target_width, target_height, '(ow-iw)/2', '(oh-ih)/2', color='black')
 
-                print(f"✅ Processed: {output_path}")
+        # Encode and save the processed file, forcing SAR at the bitstream level
+        try:
+            video = add_timestamp_to_video(filename, video)
+            ffmpeg.output(
+                video, output_path,
+                vcodec="libx264", crf=18, preset="slow",
+                acodec="aac", audio_bitrate="192k", pix_fmt="yuv420p", format="mp4", map="0:a?",
+                **{'bsf:v': 'h264_metadata=sample_aspect_ratio=1/1'}
+            ).run(overwrite_output=True)
 
-            except ffmpeg.Error as e:
-                print(f"❌ Error processing {filename}")
-                print("------ FFmpeg Error Output ------")
-                print(e.stderr.decode() if e.stderr else "No detailed error message available.")
-                print("---------------------------------")
+            print(f"✅ Processed: {filename}")
 
-    print("✅ All videos processed successfully.")
+        except ffmpeg.Error as e:
+            print(f"❌ Error processing {filename}")
+            print(e.stderr.decode() if e.stderr else "No detailed error message available.")
+
+    print("🎬 All videos processed successfully!")
+    
+
+def add_timestamp_to_video(filename, video, duration=2.5):
+            
+    try:
+        date=extract_date_from_filename(filename)
+        time=extract_time_from_filename(filename)
+    except ValueError as e:
+        print(f"❌ Error parsing datetime from {filename}")
+        print(e)
+        return
+
+    try:
+        video = video.filter("drawtext", text=date, fontcolor="white", fontsize=24,
+                             x="w-text_w-10", y="h-text_h-50", enable="lte(t,2.5)")
+        video = video.filter("drawtext", text=time, fontcolor="white", fontsize=24,
+                             x="w-text_w-10", y="h-text_h-25", enable="lte(t,2.5)")
+
+    except ffmpeg.Error as e:
+        print(f"❌ Error processing {filename}")
+        print("------ FFmpeg Error Output ------")
+        print(e.stderr.decode() if e.stderr else "No detailed error message available.")
+        print("---------------------------------")
+        
+    return video
     
     
 def combine_videos(output_folder, final_output_file):
@@ -99,5 +159,5 @@ def cleanup(concat_file_path, video_files):
         print(f"❌ Error during cleanup: {cleanup_error}")
     
     
-add_timestamp_to_videos(input_dir, output_dir)
+process_and_standardize_videos(input_dir, output_dir)
 combine_videos(output_dir, final_output_file)
