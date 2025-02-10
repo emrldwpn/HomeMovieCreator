@@ -3,7 +3,7 @@ import ffmpeg
 from timestamp_utils import extract_date_from_filename, extract_time_from_filename
 
 # Paths
-input_dir = r"C:\Users\ericp\Desktop\videos-test"
+input_dir = r"C:\Users\ericp\Desktop\Phoenix Baby Tape"
 output_dir = r"C:\Users\ericp\Desktop\videos-test\output"
 final_output_file = r"C:\Users\ericp\Desktop\videos-test\output\combined_video.mp4"
 os.makedirs(output_dir, exist_ok=True)
@@ -55,9 +55,30 @@ def process_and_standardize_videos(input_dir, output_dir, target_width=1920, tar
         # Define video input and normalize SAR
         video = ffmpeg.input(input_path).filter('fps', fps=target_fps, round='up')  # Normalize frame rate
         video = video.filter('setsar', '1/1')  # Ensure square pixels
+            
+        rotation = 0
+        displaymatrix = 0
+        if "side_data_list" in video_stream:
+            for side_data in video_stream["side_data_list"]:
+                if "rotation" in side_data:
+                    rotation = side_data["rotation"]
+                if "displaymatrix" in side_data:
+                    displaymatrix = side_data["rotation"]
+                    print(f"displaymatrix = {displaymatrix}") 
+        
+        is_vertical = (width < height) or (rotation in [90, 270]) or (displaymatrix) in ([90, -90])
+           
+        print(f"🔍 Rotation: {rotation}°, Is Vertical: {is_vertical}")
+        
+        if is_vertical:
+            print(f"🔹 Pillarboxing vertical video: {filename}")
+            
+        if True:
+            continue
+
 
         # Determine if video needs pillarboxing
-        if width < height or dar == '9:16':
+        if width < height or dar == '16:9':
             print(f"🔹 Pillarboxing vertical video: {filename}")
 
             video = video.filter('setdar', '16/9')
@@ -65,10 +86,6 @@ def process_and_standardize_videos(input_dir, output_dir, target_width=1920, tar
             # Scale while maintaining aspect ratio
             video = video.filter('scale', 'min(iw*1080/ih,1920)', 'min(1080, ih*1920/iw)')
             video = video.filter('pad', target_width, target_height, '(ow-iw)/2', '(oh-ih)/2', color='black')
-
-        else:
-            # Standard landscape videos just get resized properly
-            video = video.filter('scale', target_width, target_height)
 
         # Encode and save the processed file, forcing SAR at the bitstream level
         try:
@@ -146,4 +163,4 @@ def batch_concatenate(output_directory, final_output_file, batch_size=5):
 
 # Run the process
 process_and_standardize_videos(input_dir, output_dir)
-batch_concatenate(output_dir, final_output_file, batch_size=5)
+# batch_concatenate(output_dir, final_output_file, batch_size=5)
