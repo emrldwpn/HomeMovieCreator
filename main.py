@@ -2,9 +2,9 @@ import os
 import ffmpeg
 from timestamp_utils import extract_date_from_filename, extract_time_from_filename
 
-input_dir = r"C:\Users\ericp\Desktop\videos-test"
-output_dir = r"C:\Users\ericp\Desktop\videos-test\output"
-final_output_file = r"C:\Users\ericp\Desktop\videos-test\output\combined_video.mp4"
+input_dir = r"I:\Phoenix Home Videos"
+output_dir = r"I:\Phoenix Home Videos\output"
+final_output_file = r"I:\Phoenix Home Videos\output\combined_video.mp4"
 os.makedirs(output_dir, exist_ok=True)
 
 
@@ -82,7 +82,7 @@ def process_and_standardize_videos(input_dir, output_dir, target_width=1920, tar
     print("🎬 All videos processed successfully!")
     
 
-def add_timestamp_to_video(filename, video, duration=2.5):
+def add_timestamp_to_video(filename, video, duration=5, font_size=60, padding=30):
             
     try:
         date=extract_date_from_filename(filename)
@@ -93,10 +93,19 @@ def add_timestamp_to_video(filename, video, duration=2.5):
         return
 
     try:
-        video = video.filter("drawtext", text=date, fontcolor="white", fontsize=24,
-                             x="w-text_w-10", y="h-text_h-50", enable="lte(t,2.5)")
-        video = video.filter("drawtext", text=time, fontcolor="white", fontsize=24,
-                             x="w-text_w-10", y="h-text_h-25", enable="lte(t,2.5)")
+        duration_str = str(duration)
+        
+        date_y = f"h-{font_size * 2 + padding}"
+        time_y = f"h-{font_size + padding}"
+
+        video = video.filter(
+            "drawtext", text=date, fontcolor="white", fontsize=font_size,
+            x="w-text_w-10", y=date_y, enable=f"lte(t,{duration_str})"
+        )
+        video = video.filter(
+            "drawtext", text=time, fontcolor="white", fontsize=font_size,
+            x="w-text_w-10", y=time_y, enable=f"lte(t,{duration_str})"
+        )
 
     except ffmpeg.Error as e:
         print(f"❌ Error processing {filename}")
