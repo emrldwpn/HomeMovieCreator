@@ -1,4 +1,4 @@
-# Home Video Processor
+# Home Movie Creator
 
 This script processes and standardizes home videos by fixing aspect ratios, adding timestamps, and concatenating processed videos into a final output file. It supports handling vertical videos, applying pillarboxing, and ensuring consistent encoding settings.
 
