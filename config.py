@@ -1,18 +1,19 @@
 import os
 import argparse
+from validation import validate_config
 
 # Default Input and Output Directories
-INPUT_DIR = r"D:\Videos"
-OUTPUT_DIR = os.path.join(INPUT_DIR, "output")
-FINAL_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "home_videos.mp4")
-
-# Video Processing Parameters
-TARGET_WIDTH = 1920
-TARGET_HEIGHT = 1080
-TARGET_FPS = 30
-TIMESTAMP_DURATION = 5  # seconds
-TIMESTAMP_FONT_SIZE = 60
-TIMESTAMP_PADDING = 30
+settings = {
+    "input_dir": r"D:\Videos",
+    "output_dir": r"D:\Videos\output",
+    "final_output_file": "home_videos.mp4",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "ts_duration": 5,  # seconds
+    "ts_fontsize": 60,
+    "ts_padding": 30,
+}
 
 parser = argparse.ArgumentParser(description="Process and standardize home videos.")
 parser.add_argument("--input_dir", type=str, help="Path to the input video directory.")
@@ -26,34 +27,35 @@ parser.add_argument("--ts_fontsize", type=int, help="Timestamp font size.")
 parser.add_argument("--ts_padding", type=int, help="Timestamp padding.")
 args = parser.parse_args()
 
+# Apply user arguments, if provided
 if args.input_dir:
-    INPUT_DIR = args.input_dir
-    OUTPUT_DIR = os.path.join(INPUT_DIR, "output")
-    FINAL_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "home_videos.mp4")
+    settings["input_dir"] = args.input_dir
+    settings["output_dir"] = os.path.join(settings["input_dir"], "output")
 
 if args.output_dir:
-    OUTPUT_DIR = args.output_dir
-    FINAL_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "home_videos.mp4")
+    settings["output_dir"] = args.output_dir
 
 if args.output_video:
-    FINAL_OUTPUT_FILE = os.path.join(OUTPUT_DIR, args.output_video)
-    if not FINAL_OUTPUT_FILE.lower().endswith(".mp4"):
-        FINAL_OUTPUT_FILE +=  ".mp4"
+    settings["final_output_file"] = args.output_video
+    if not settings["final_output_file"].lower().endswith(".mp4"):
+        settings["final_output_file"] += ".mp4"
 
 if args.width:
-    TARGET_WIDTH = args.width
+    settings["width"] = args.width
 
 if args.height:
-    TARGET_HEIGHT = args.height
+    settings["height"] = args.height
 
 if args.fps:
-    TARGET_FPS = args.fps
+    settings["fps"] = args.fps
 
 if args.ts_duration:
-    TIMESTAMP_DURATION = args.ts_duration
+    settings["ts_duration"] = args.ts_duration
 
 if args.ts_fontsize:
-    TIMESTAMP_FONT_SIZE = args.ts_fontsize
+    settings["ts_fontsize"] = args.ts_fontsize
 
 if args.ts_padding:
-    TIMESTAMP_PADDING = args.ts_padding
+    settings["ts_padding"] = args.ts_padding
+
+validate_config(settings)
